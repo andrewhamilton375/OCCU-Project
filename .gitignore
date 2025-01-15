@@ -1,0 +1,8 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/OCCU_Assessment/.vs/OCCU_Assessment
+/.vs
+/OCCU_Assessment/bin/Debug/net7.0
+/OCCU_Assessment/obj
