@@ -263,5 +263,5 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Contact
 
-- **Project Lead**: [Your Name](https://github.com/andrewhamilton375)
+- **Project Lead**: [Andrew Hamilton](https://github.com/andrewhamilton375)
 - **Email**: andrewhamilton375@gmail.com
