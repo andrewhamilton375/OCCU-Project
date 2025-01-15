@@ -1,0 +1,562 @@
+﻿@page "/data-management"
+@using OCCU_Assessment.Models
+@using OCCU_Assessment.Data
+@inject DataService DataService
+@inject IJSRuntime JSRuntime
+
+<h3>Data Management</h3>
+
+<!-- Message Alert -->
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @alertClass" role="alert">
+        @message
+    </div>
+}
+
+<!-- Search Section -->
+<div class="mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        <input type="text" @bind="searchTerm" placeholder="Search..." class="form-control flex-grow-1" @onkeydown="HandleKeyDown" />
+        <button class="btn btn-primary" @onclick="PerformSearch">Search</button>
+        <button class="btn btn-secondary" @onclick="ResetSearch">Reset</button>
+    </div>
+</div>
+
+<button class="btn btn-primary btn-lg fixed-compare-button" @onclick="CompareSelected" disabled="@(!CanCompare)">
+    <span class="oi oi-signpost" aria-hidden="true"></span>
+</button>
+
+<!-- Data Table -->
+<table class="table table-bordered" style="table-layout: auto; width: 100%;">
+    <thead>
+        <tr>
+            <th>Select</th> <!-- Selection Column -->
+            <th>Name</th>
+            <th>Field1</th>
+            <th>Field2</th>
+            <th>Field3</th>
+            <th>Updated At</th>
+            <th class="actions-column">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in displayedData)
+        {
+            <tr class="@GetRowClass(item)" @onclick="() => ToggleSelection(item)" @ondblclick="() => EditItem(item.Name)">
+                <td>
+                    <InputCheckbox @bind-Value="item.IsSelected" @onchange="() => OnCheckboxChanged(item)" />
+                </td>
+                <td>@item.Name</td>
+                <td>@item.Field1</td>
+                <td>@item.Field2</td>
+                <td>@item.Field3</td>
+                <td>@item.UpdateTimeStamp.ToString("g")</td>
+                <td class="actions-column">
+                    <button class="btn btn-sm btn-info btn-icon" @onclick="() => EditItem(item.Name)" aria-label="Edit" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit">
+                        <span class="oi oi-pencil oi-sm" aria-hidden="true"></span>
+                    </button>
+                    <button class="btn btn-sm btn-danger btn-icon" @onclick="() => OpenDeleteModal(item)" aria-label="Delete" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete">
+                        <span class="oi oi-trash oi-sm" aria-hidden="true"></span>
+                    </button>
+                    <button class="btn btn-sm btn-secondary btn-icon" @onclick="() => CopyItem(item.Name)" aria-label="Copy" data-bs-toggle="tooltip" data-bs-placement="top" title="Copy">
+                        <span class="oi oi-clipboard oi-sm" aria-hidden="true"></span>
+                    </button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<!-- Create New Item -->
+<h4>Create New Item</h4>
+<EditForm Model="newItem" OnValidSubmit="AddItem">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+    <div class="mb-3">
+        <label>Name</label>
+        <InputText class="form-control" @bind-Value="newItem.Name" />
+    </div>
+    <div class="mb-3">
+        <label>Field1</label>
+        <InputText class="form-control" @bind-Value="newItem.Field1" />
+    </div>
+    <div class="mb-3">
+        <label>Field2</label>
+        <InputText class="form-control" @bind-Value="newItem.Field2" />
+    </div>
+    <div class="mb-3">
+        <label>Field3</label>
+        <InputText class="form-control" @bind-Value="newItem.Field3" />
+    </div>
+    <button type="submit" class="btn btn-success">Create</button>
+</EditForm>
+
+<!-- Edit Modal -->
+@if (isEditing)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-labelledby="editModalLabel" aria-modal="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <EditForm Model="editItem" OnValidSubmit="SaveEdit">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit Item</h5>
+                        <button type="button" class="btn-close" aria-label="Close" @onclick="CancelEdit"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label>Name</label>
+                            <InputText class="form-control" @bind-Value="editItem.Name" @onchange="ValidateName" />
+                            @if (nameValidationError != null)
+                            {
+                                <span class="text-danger">@nameValidationError</span>
+                            }
+                        </div>
+                        <div class="mb-3">
+                            <label>Field1</label>
+                            <InputText class="form-control" @bind-Value="editItem.Field1" />
+                        </div>
+                        <div class="mb-3">
+                            <label>Field2</label>
+                            <InputText class="form-control" @bind-Value="editItem.Field2" />
+                        </div>
+                        <div class="mb-3">
+                            <label>Field3</label>
+                            <InputText class="form-control" @bind-Value="editItem.Field3" />
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaveDisabled">Save</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+<!-- Delete Confirmation Modal -->
+@if (showDeleteModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-labelledby="deleteModalLabel" aria-modal="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Deletion</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseDeleteModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete '<strong>@itemToDelete?.Name</strong>'?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseDeleteModal">Cancel</button>
+                    <button class="btn btn-danger" @onclick="DeleteConfirmed">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+<!-- Comparison Modal -->
+@if (showComparisonModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-labelledby="comparisonModalLabel" aria-modal="true">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Compare Items</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseComparisonModal"></button>
+                </div>
+                <div class="modal-body">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Item 1 (@selectedItemNames[0])</th>
+                                <th>Item 2 (@selectedItemNames[1])</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var result in comparisonResults)
+                            {
+                                <tr class="@GetRowClassOfComparison(result.IsDifferent)">
+                                    <td>@result.FieldName</td>
+                                    <td>@result.Value1</td>
+                                    <td>@result.Value2</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseComparisonModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private List<DataItem> displayedData = new List<DataItem>();
+    private string searchTerm = string.Empty;
+    private DataItem newItem = new DataItem();
+    private bool isEditing = false;
+    private DataItem editItem = new DataItem();
+
+    // Variables for Delete Modal
+    private bool showDeleteModal = false;
+    private DataItem itemToDelete;
+
+    // Variables for Comparison
+    private List<ComparisonResult> comparisonResults = new List<ComparisonResult>();
+    private bool showComparisonModal = false;
+    private List<string> selectedItemNames = new List<string>();
+
+    // Variables for User Feedback
+    private string message = string.Empty;
+    private string alertClass = "alert-success"; // "alert-danger" for errors
+
+    // Variables for Name Validation
+    private string nameValidationError = null;
+    private bool isSaveDisabled => nameValidationError != null;
+
+    // To store the original name before editing
+    private string originalName = string.Empty;
+
+    // Selection Tracking
+    private HashSet<string> selectedItems = new HashSet<string>();
+
+    protected override void OnInitialized()
+    {
+        displayedData = DataService.GetAll();
+    }
+
+    private void PerformSearch()
+    {
+        displayedData = DataService.Search(searchTerm);
+    }
+
+    private void ResetSearch()
+    {
+        searchTerm = string.Empty;
+        displayedData = DataService.GetAll();
+    }
+
+    private void AddItem()
+    {
+        var success = DataService.Add(newItem);
+        if (success)
+        {
+            ShowMessage($"'{newItem.Name}' has been created successfully.", "alert-success");
+            newItem = new DataItem();
+            displayedData = DataService.GetAll();
+        }
+        else
+        {
+            ShowMessage($"A DataItem with the name '{newItem.Name}' already exists.", "alert-danger");
+        }
+    }
+
+    private void EditItem(string name)
+    {
+        var existingItem = DataService.GetByName(name);
+        if (existingItem != null)
+        {
+            // Store the original name
+            originalName = existingItem.Name;
+
+            // Create a copy to edit
+            editItem = new DataItem
+                {
+                    Name = existingItem.Name,
+                    Field1 = existingItem.Field1,
+                    Field2 = existingItem.Field2,
+                    Field3 = existingItem.Field3,
+                    UpdateTimeStamp = existingItem.UpdateTimeStamp
+                };
+            isEditing = true;
+        }
+    }
+
+    private void ValidateName(ChangeEventArgs e)
+    {
+        var newName = editItem.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            nameValidationError = "Name cannot be empty.";
+            return;
+        }
+
+        if (!originalName.Equals(newName, StringComparison.OrdinalIgnoreCase) &&
+            DataService.GetByName(newName) != null)
+        {
+            nameValidationError = $"The name '{newName}' is already in use. Please choose a different name.";
+        }
+        else
+        {
+            nameValidationError = null;
+        }
+    }
+
+    private void SaveEdit()
+    {
+        // Re-validate before saving
+        ValidateName(new ChangeEventArgs { Value = editItem.Name });
+
+        if (nameValidationError != null)
+        {
+            ShowMessage("Please resolve the validation errors before saving.", "alert-danger");
+            return; // Prevent update
+        }
+
+        var success = DataService.Update(originalName, editItem);
+        if (success)
+        {
+            isEditing = false;
+            displayedData = DataService.GetAll();
+            ShowMessage($"'{editItem.Name}' has been updated successfully.", "alert-success");
+            // Reset validation
+            nameValidationError = null;
+        }
+        else
+        {
+            ShowMessage($"Failed to update '{editItem.Name}'. Please ensure the name is unique and try again.", "alert-danger");
+        }
+    }
+
+    private void CancelEdit()
+    {
+        isEditing = false;
+        editItem = new DataItem();
+        originalName = string.Empty;
+        nameValidationError = null;
+    }
+
+    private void OpenDeleteModal(DataItem item)
+    {
+        itemToDelete = item;
+        showDeleteModal = true;
+    }
+
+    private void CloseDeleteModal()
+    {
+        showDeleteModal = false;
+        itemToDelete = null;
+    }
+
+    private void DeleteConfirmed()
+    {
+        if (itemToDelete != null)
+        {
+            var success = DataService.Delete(itemToDelete.Name);
+            if (success)
+            {
+                displayedData = DataService.GetAll();
+                ShowMessage($"'{itemToDelete.Name}' has been deleted successfully.", "alert-success");
+                // Also remove from selectedItems if it was selected
+                if (selectedItems.Contains(itemToDelete.Name))
+                {
+                    selectedItems.Remove(itemToDelete.Name);
+                }
+            }
+            else
+            {
+                ShowMessage($"Failed to delete '{itemToDelete.Name}'. It may not exist.", "alert-danger");
+            }
+            CloseDeleteModal();
+        }
+    }
+
+    private void CopyItem(string name)
+    {
+        var newName = $"Copy-of-{name}";
+        var newItem = new DataItem
+            {
+                Name = newName,
+                // Fields will be copied inside the service
+            };
+
+        var success = DataService.Copy(name, newItem);
+        if (success)
+        {
+            displayedData = DataService.GetAll();
+            ShowMessage($"'{newName}' has been created as a copy of '{name}'.", "alert-success");
+        }
+        else
+        {
+            ShowMessage($"Failed to copy '{name}'. A DataItem with the name '{newName}' may already exist.", "alert-danger");
+        }
+    }
+
+    // Event Handler for Checkbox Changes
+    private void OnCheckboxChanged(DataItem item)
+    {
+        if (item.IsSelected)
+        {
+            selectedItems.Add(item.Name);
+        }
+        else
+        {
+            selectedItems.Remove(item.Name);
+        }
+
+        // Ensure no more than two items are selected
+        if (selectedItems.Count > 2)
+        {
+            // Deselect the current item to maintain the limit
+            item.IsSelected = false;
+            selectedItems.Remove(item.Name);
+            ShowMessage("You can only select up to two items for comparison.", "alert-warning");
+        }
+
+        StateHasChanged(); // Trigger UI update
+    }
+
+    // Selection and Comparison Logic
+    private bool CanCompare => selectedItems.Count == 2;
+
+    private void CompareSelected()
+    {
+        if (selectedItems.Count != 2)
+        {
+            ShowMessage("Please select exactly two items to compare.", "alert-warning");
+            return;
+        }
+
+        var names = selectedItems.ToList();
+        selectedItemNames = names;
+
+        var item1 = DataService.GetByName(names[0]);
+        var item2 = DataService.GetByName(names[1]);
+
+        if (item1 == null || item2 == null)
+        {
+            ShowMessage("One or both selected items could not be found.", "alert-danger");
+            return;
+        }
+
+        comparisonResults = new List<ComparisonResult>
+        {
+            new ComparisonResult
+            {
+                FieldName = "Field1",
+                Value1 = item1.Field1,
+                Value2 = item2.Field1
+            },
+            new ComparisonResult
+            {
+                FieldName = "Field2",
+                Value1 = item1.Field2,
+                Value2 = item2.Field2
+            },
+            new ComparisonResult
+            {
+                FieldName = "Field3",
+                Value1 = item1.Field3,
+                Value2 = item2.Field3
+            }
+        };
+
+        showComparisonModal = true;
+    }
+
+
+    private string GetRowClassOfComparison(bool isDifferent)
+    {
+        return isDifferent ? "table-danger" : string.Empty;
+    }
+
+    // User Feedback
+    private void ShowMessage(string msg, string cssClass)
+    {
+        message = msg;
+        alertClass = cssClass;
+
+        // Automatically hide the message after 5 seconds
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(5000);
+            InvokeAsync(() =>
+            {
+                message = string.Empty;
+                StateHasChanged();
+            });
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Initialize Bootstrap tooltips by calling the JS function
+            await JSRuntime.InvokeVoidAsync("initializeTooltips");
+        }
+        else
+        {
+            // Re-initialize tooltips after any render that might add new elements
+            await JSRuntime.InvokeVoidAsync("initializeTooltips");
+        }
+    }
+
+    private void CloseComparisonModal()
+    {
+        showComparisonModal = false;
+    }
+
+    // Method to toggle selection when a row is clicked
+    private void ToggleSelection(DataItem item)
+    {
+        if (!item.IsSelected && selectedItems.Count > 1) return;
+
+        item.IsSelected = !item.IsSelected;
+
+        if (item.IsSelected)
+        {
+            selectedItems.Add(item.Name);
+            if (selectedItems.Count > 2)
+            {
+                // Deselect the earliest selected item to maintain the limit
+                var firstSelected = selectedItems.First();
+                var firstItem = displayedData.FirstOrDefault(i => i.Name == firstSelected);
+                if (firstItem != null)
+                {
+                    firstItem.IsSelected = false;
+                    selectedItems.Remove(firstSelected);
+                    ShowMessage("You can only select up to two items for comparison.", "alert-warning");
+                }
+            }
+        }
+        else
+        {
+            selectedItems.Remove(item.Name);
+        }
+
+        StateHasChanged(); // Trigger UI update
+    }
+
+    // Method to get the CSS class for a row based on selection
+    private string GetRowClass(DataItem item)
+    {
+        return item.IsSelected ? "table-active" : "";
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key.Equals("Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            PerformSearch();
+        }
+    }
+
+    // Comparison Result Model
+    public class ComparisonResult
+    {
+        public string FieldName { get; set; }
+        public string Value1 { get; set; }
+        public string Value2 { get; set; }
+        public bool IsDifferent => Value1 != Value2;
+    }
+}

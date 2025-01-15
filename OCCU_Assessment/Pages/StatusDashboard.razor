@@ -1,0 +1,99 @@
+﻿@page "/"
+@using OCCU_Assessment.Models
+@using OCCU_Assessment.Data
+@using Microsoft.AspNetCore.SignalR.Client
+@inject StatusService StatusService
+@inject NavigationManager NavigationManager
+@implements IAsyncDisposable
+
+<h3>Status Dashboard</h3>
+
+<p>Status: @connectionStatus</p>
+
+<div class="status-grid">
+    @foreach (var status in statuses)
+    {
+        <div class="status-card" tabindex="0" @onclick="() => OnStatusClicked(status)" aria-label="@GetAriaLabel(status)">
+            <div class="status-id">@status.Id</div>
+            <div class="status-tag">@status.Tag</div>
+            <div class="status-value" style="background-color:@GetColor(status.Value)">
+                @status.Value.ToUpper()
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Status> statuses = new List<Status>();
+    private HubConnection hubConnection;
+    private string connectionStatus = "Connecting...";
+
+    protected override void OnInitialized()
+    {
+        statuses = StatusService.GetStatuses();
+
+        // Initialize SignalR connection
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/statusHub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<Status>("ReceiveStatusUpdate", (updatedStatus) =>
+        {
+            var index = statuses.FindIndex(s => s.Id == updatedStatus.Id);
+            if (index != -1)
+            {
+                statuses[index].Value = updatedStatus.Value;
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        ConnectToHub();
+    }
+
+    private async Task ConnectToHub()
+    {
+        try
+        {
+            await hubConnection.StartAsync();
+            connectionStatus = "Connected";
+        }
+        catch (Exception ex)
+        {
+            // Handle connection errors
+            Console.WriteLine($"Error connecting to hub: {ex.Message}");
+            connectionStatus = "Disconnected";
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection != null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+    private string GetColor(string status)
+    {
+        return status.ToLower() switch
+        {
+            "fail" => "#dc3545",  // Bootstrap Danger (Red)
+            "warn" => "#ffc107",  // Bootstrap Warning (Yellow)
+            "pass" => "#28a745",  // Bootstrap Success (Green)
+            _ => "#6c757d"        // Bootstrap Secondary (Gray)
+        };
+    }
+
+    private void OnStatusClicked(Status status)
+    {
+        // Optional: Implement any action when a status card is clicked
+        // For example, navigate to a detailed view or display more info
+        // Currently, no action is defined
+    }
+
+    private string GetAriaLabel(Status status)
+    {
+        return $"ID: {status.Id}, Tag: {status.Tag}, Status: {status.Value}";
+    }
+}
